@@ -3,40 +3,44 @@ package main
 import (
 	"errors"
 	"fmt"
-	"go_learning/internal/models"
-	"html/template"
 	"net/http"
 	"strconv"
+
+	"go_learning/internal/models"
+
+	"github.com/julienschmidt/httprouter" // New import
 )
 
 func (app *application) home(w http.ResponseWriter, r *http.Request) {
 
-	if r.URL.Path != "/" {
-		app.notFound(w)
-		return
-	}
+	data := app.newTemplateData(r)
+	app.render(w, http.StatusOK, "home.tmpl.html", data)
+}
 
-	files := []string{
-		"./ui/html/base.tmpl.html",
-		"./ui/html/pages/home.tmpl.html",
-		"./ui/html/partials/nav.tmpl.html",
-	}
+func (app *application) snippetList(w http.ResponseWriter, r *http.Request) {
 
-	ts, err := template.ParseFiles(files...)
+	snippets, err := app.snippets.Latest()
 	if err != nil {
 		app.serverError(w, err)
 		return
 	}
 
-	err = ts.ExecuteTemplate(w, "base", nil)
-	if err != nil {
-		app.serverError(w, err)
-	}
-
+	data := app.newTemplateData(r)
+	data.Snippets = snippets
+	app.render(w, http.StatusOK, "list.tmpl.html", data)
 }
 
 func (app *application) snippetView(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(r.URL.Query().Get("id"))
+	// When httprouter is parsing a request, the values of any named parameters
+	// will be stored in the request context. We'll talk about request context
+	// in detail later in the book, but for now it's enough to know that you can
+	// use the ParamsFromContext() function to retrieve a slice containing these
+	// parameter names and values like so:
+	params := httprouter.ParamsFromContext(r.Context())
+
+	// We can then use the ByName() method to get the value of the "id" named
+	// parameter from the slice and validate it as normal.
+	id, err := strconv.Atoi(params.ByName("id"))
 	if err != nil || id < 1 {
 		app.notFound(w)
 		return
@@ -55,20 +59,13 @@ func (app *application) snippetView(w http.ResponseWriter, r *http.Request) {
 	data := app.newTemplateData(r)
 	data.Snippet = snippet
 
-	// Pass the data to the render() helper as normal.
-	app.render(w, http.StatusOK, "home.tmpl.html", data)
-
-	// fmt.Fprintf(w, "%+v", snippet)
-
+	app.render(w, http.StatusOK, "view.tmpl.html", data)
 }
 
-func (app *application) snippetCreate(w http.ResponseWriter, r *http.Request) {
-
-	if r.Method != "POST" {
-		w.Header().Set("Allow", http.MethodPost)
-		app.clientError(w, http.StatusMethodNotAllowed)
-		return
-	}
+// Rename this handler to snippetCreatePost.
+func (app *application) snippetCreatePost(w http.ResponseWriter, r *http.Request) {
+	// Checking if the request method is a POST is now superfluous and can be
+	// removed, because this is done automatically by httprouter.
 
 	title := "O snail"
 	content := "O snail\nClimb Mount Fuji,\nBut slowly, slowly!\n\n– Kobayashi Issa"
@@ -80,27 +77,12 @@ func (app *application) snippetCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/snippet/view?id=%d", id), http.StatusSeeOther)
+	// Update the redirect path to use the new clean URL format.
+	http.Redirect(w, r, fmt.Sprintf("/snippet/view/%d", id), http.StatusSeeOther)
 }
 
-func (app *application) snippetList(w http.ResponseWriter, r *http.Request) {
-
-	snippets, err := app.snippets.Latest()
-	if err != nil {
-		app.serverError(w, err)
-		return
-	}
-
-	// Call the newTemplateData() helper to get a templateData struct containing
-	// the 'default' data (which for now is just the current year), and add the
-	// snippets slice to it.
+func (app *application) snippetCreate(w http.ResponseWriter, r *http.Request) {
 	data := app.newTemplateData(r)
-	data.Snippets = snippets
 
-	// Pass the data to the render() helper as normal.
-	app.render(w, http.StatusOK, "home.tmpl.html", data)
-
-	// for _, snippet := range snippets {
-	// 	fmt.Fprintf(w, "%+v\n", snippet)
-	// }
+	app.render(w, http.StatusOK, "create.tmpl.html", data)
 }
